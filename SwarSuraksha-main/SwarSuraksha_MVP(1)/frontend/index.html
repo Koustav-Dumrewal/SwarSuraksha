@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SwarSuraksha — Voice Clone Detection</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Inter, Arial, sans-serif;
+      background: #0b1020;
+      color: #f4f7fb;
+    }
+
+    .wrap {
+      max-width: 1050px;
+      margin: 0 auto;
+      padding: 32px 20px 60px;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .brand {
+      font-size: 28px;
+      font-weight: 800;
+    }
+
+    .muted {
+      color: #9aa6bd;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 18px;
+      margin-top: 24px;
+    }
+
+    .card {
+      background: #121a2d;
+      border: 1px solid #26314a;
+      border-radius: 18px;
+      padding: 22px;
+    }
+
+    .risk {
+      font-size: 64px;
+      font-weight: 800;
+      margin: 20px 0 5px;
+    }
+
+    .label {
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 12px 18px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-right: 8px;
+    }
+
+    #recordBtn {
+      background: #ffffff;
+      color: #111827;
+    }
+
+    #fileInput {
+      margin-top: 12px;
+    }
+
+    .bar {
+      height: 14px;
+      background: #25304a;
+      border-radius: 99px;
+      overflow: hidden;
+      margin-top: 16px;
+    }
+
+    #barFill {
+      height: 100%;
+      width: 0%;
+      background: #ffffff;
+      transition: width 250ms ease;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 15px;
+      font-size: 13px;
+    }
+
+    th, td {
+      padding: 8px;
+      border-bottom: 1px solid #26314a;
+      text-align: left;
+    }
+
+    .high { color: #ff7b7b; }
+    .review { color: #ffd166; }
+    .low { color: #79e2a0; }
+
+    @media (max-width: 800px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <div>
+      <div class="brand">SwarSuraksha</div>
+      <div class="muted">Real-time AI voice clone detection — SIH 2026 prototype</div>
+    </div>
+    <div id="status" class="muted">Ready</div>
+  </div>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Live Detection</h2>
+      <p class="muted">
+        Record a short microphone window. The prototype sends the audio to the
+        local detector and updates the risk score.
+      </p>
+
+      <button id="recordBtn">Start 5s Scan</button>
+      <input id="fileInput" type="file" accept="audio/*">
+
+      <div class="risk" id="risk">0%</div>
+      <div class="label" id="label">NO SCAN</div>
+
+      <div class="bar">
+        <div id="barFill"></div>
+      </div>
+
+      <p id="details" class="muted">No audio analyzed yet.</p>
+    </section>
+
+    <section class="card">
+      <h2>Detection Pipeline</h2>
+      <ol>
+        <li>Audio capture</li>
+        <li>16 kHz mono normalization</li>
+        <li>AASIST-L anti-spoofing inference</li>
+        <li>Risk mapping</li>
+        <li>Hash-chain audit event</li>
+      </ol>
+      <p class="muted">
+        The hash chain is an MVP audit mechanism. It is not a public blockchain.
+      </p>
+    </section>
+  </div>
+
+  <section class="card" style="margin-top:18px">
+    <h2>Audit Trail</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Time</th>
+          <th>Label</th>
+          <th>Risk</th>
+          <th>Hash</th>
+        </tr>
+      </thead>
+      <tbody id="auditBody"></tbody>
+    </table>
+  </section>
+</div>
+
+<script>
+const recordBtn = document.getElementById("recordBtn");
+const fileInput = document.getElementById("fileInput");
+const riskEl = document.getElementById("risk");
+const labelEl = document.getElementById("label");
+const barFill = document.getElementById("barFill");
+const statusEl = document.getElementById("status");
+const detailsEl = document.getElementById("details");
+const auditBody = document.getElementById("auditBody");
+
+function renderResult(result) {
+  const riskPercent = Math.round(result.risk * 100);
+
+  riskEl.textContent = riskPercent + "%";
+  labelEl.textContent = result.label;
+  barFill.style.width = riskPercent + "%";
+
+  labelEl.className = "label " +
+    (result.label === "HIGH_RISK" ? "high" :
+     result.label === "REVIEW" ? "review" : "low");
+
+  detailsEl.textContent =
+    "Model score: " + result.model_score.toFixed(4) +
+    " | Audit hash: " + result.audit.event_hash.slice(0, 18) + "...";
+
+  statusEl.textContent = "Detection complete";
+  loadAudit();
+}
+
+async function uploadAudio(blob, filename) {
+  statusEl.textContent = "Analyzing...";
+  const form = new FormData();
+  form.append("file", blob, filename);
+
+  const response = await fetch("/api/detect-file", {
+    method: "POST",
+    body: form
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text);
+  }
+
+  const result = await response.json();
+  renderResult(result);
+}
+
+recordBtn.addEventListener("click", async () => {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    alert("Microphone access is not supported in this browser.");
+    return;
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+    const recorder = new MediaRecorder(stream);
+    const chunks = [];
+
+    recorder.ondataavailable = event => {
+      if (event.data.size > 0) chunks.push(event.data);
+    };
+
+    recorder.onstop = async () => {
+      stream.getTracks().forEach(track => track.stop());
+
+      const blob = new Blob(chunks, {
+        type: recorder.mimeType || "audio/webm"
+      });
+
+      try {
+        await uploadAudio(blob, "microphone.webm");
+      } catch (error) {
+        statusEl.textContent = "Error";
+        alert(error.message);
+      }
+    };
+
+    recorder.start();
+    recordBtn.disabled = true;
+    statusEl.textContent = "Recording 5 seconds...";
+
+    setTimeout(() => {
+      if (recorder.state !== "inactive") {
+        recorder.stop();
+      }
+      recordBtn.disabled = false;
+    }, 5000);
+  } catch (error) {
+    statusEl.textContent = "Microphone permission failed";
+    alert(error.message);
+  }
+});
+
+fileInput.addEventListener("change", async event => {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  try {
+    await uploadAudio(file, file.name);
+  } catch (error) {
+    statusEl.textContent = "Error";
+    alert(error.message);
+  }
+});
+
+async function loadAudit() {
+  const response = await fetch("/api/audit");
+  const data = await response.json();
+
+  auditBody.innerHTML = "";
+
+  for (const event of data.events) {
+    const row = document.createElement("tr");
+
+    row.innerHTML = `
+      <td>${event.id}</td>
+      <td>${new Date(event.created_at).toLocaleTimeString()}</td>
+      <td>${event.label}</td>
+      <td>${Math.round(event.risk * 100)}%</td>
+      <td title="${event.event_hash}">
+        ${event.event_hash.slice(0, 16)}...
+      </td>
+    `;
+
+    auditBody.appendChild(row);
+  }
+}
+
+loadAudit();
+</script>
+</body>
+</html>
